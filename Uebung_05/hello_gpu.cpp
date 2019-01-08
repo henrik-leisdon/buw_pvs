@@ -22,21 +22,21 @@ const char *KernelSource =
 /** Beginn der main methode **/
 int main (void)
 {
-	cl_int				err;                      //
-	cl_platform_id*		platforms = NULL;         //
-	char			    platform_name[1024];      //
-	cl_device_id	    device_id = NULL;         //
-	cl_uint			    num_of_platforms = 0,     //
-					    num_of_devices = 0;       //
-	cl_context 			context;                  //
-	cl_kernel 			kernel;                   //
-	cl_command_queue	command_queue;            //
-	cl_program 			program;                  //
-	cl_mem				input, output;            //
-	float				data[DATA_SIZE] =         //
+	cl_int				err;                      // integer für error erstellen
+	cl_platform_id*		platforms = NULL;         // plattform ID
+	char			    platform_name[1024];      // plattform name
+	cl_device_id	    device_id = NULL;         // gerät ID/ device ID
+	cl_uint			    num_of_platforms = 0,     // anzahl der plattformen
+					    num_of_devices = 0;       // anzahl der devices
+	cl_context 			context;                  // initialisieren eines kontext
+	cl_kernel 			kernel;                   // kernel initialisieren
+	cl_command_queue	command_queue;            // commandqueue initialisieren
+	cl_program 			program;                  // programm initialisieren
+	cl_mem				input, output;            // input/output speicher initialisieren
+	float				data[DATA_SIZE] =         // data array erstellen
 							{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-	size_t				global[1] = {DATA_SIZE};  //
-	float				results[DATA_SIZE] = {0}; //
+	size_t				global[1] = {DATA_SIZE};  // größe der Objekte
+	float				results[DATA_SIZE] = {0}; // ergebniarray erstellen
 
 	/* 1)  --> Errors? */
 
