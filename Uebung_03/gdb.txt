@@ -1,0 +1,3 @@
+b Master
+b Slave
+r in.dat out.dat
