@@ -5,19 +5,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
-#define DATA_SIZE   10                          //
+#define DATA_SIZE   10                          // 
 #define MEM_SIZE    DATA_SIZE * sizeof(float)   //
+#define MAT_SIZE 100
 
-/** **/ 
+#define NUM_RUNS 2
+
+/** kernel als string setzen **/ 
 const char *KernelSource =
-	"#define DATA_SIZE 10												\n"
-	"__kernel void test(__global float *input, __global float *output)  \n"
-	"{																	\n"
-	"	size_t i = get_global_id(0);									\n"
-	"	output[i] = input[i] * input[i];								\n"
-	"}																	\n"
+	"																					\n"
+	"__kernel void matmult(const int D1, const int D2, const int D3,					 "
+	"   const	__global float *A, const __global float *B, const __global float *C)  	\n"
+	"{																					\n"
+	"	const int globalRow = get_global_id(0);											\n"
+	"	const int globalCol = get_global_id(1);											\n"
+	"	float acc = 0.0f;																  "	
+	"	for(int k=0;k<D3;k++){															\n"
+	"		acc +=A[k*D1 + globalRow] * B[globalCol*D2+k];								  "
+	"	}																				\n"
+	"	C[globalCol*D1+ globalRow] = acc;												\n"
 	"\n";
+
+
+	// ---------------------------------------------------------------------------
+	// random initialisation of matrix with values [0..9]
+	
+	void init_mat(float *A, int row, int col)
+	{
+		for (int i = 0; i < row*col; i++)
+			A[i] = (float)(rand() % 10);
+	}
+
 
 /** Beginn der main methode **/
 int main (void)
@@ -121,51 +141,97 @@ int main (void)
 	}
 
 	// erstellt den kernel im programm
-	kernel = clCreateKernel(program, "test", &err);
+	kernel = clCreateKernel(program, "matmult", &err);
 	if (err != CL_SUCCESS)
 	{
 		printf("Error setting kernel. Error: %d\n", err);
 		return 0;
 	}
+	clGetDeviceInfo(device_id,CL_DEVICE_NAME,1024, platform_name, NULL);
+	cl_event event = NULL;
 
 
 	/* 2) Das eigentliche programm --> speicher deklarieren?*/
 
-	// reserviert speicher für input und output
-	input  = clCreateBuffer (context, CL_MEM_READ_ONLY,	 MEM_SIZE, NULL, &err);
-	output = clCreateBuffer (context, CL_MEM_WRITE_ONLY, MEM_SIZE, NULL, &err);
+	    // Timers
+		struct timeval Tval;
+		struct timezone timez;
+
+	// größe der matrizen festlegen
+	int D1 = MAT_SIZE;
+	int D2 = MAT_SIZE;
+	int D3 = MAT_SIZE;
+	//alloc matrices
+	float * A = (float*)malloc(D1*D2*sizeof(float*));
+	float * B = (float*)malloc(D2*D3*sizeof(float*));
+	float * C = (float*)malloc(D1*D3*sizeof(float*));
+	//init matrices
+
+	printf("initialize matrices \n");
+	init_mat(A, D1,D2);
+	init_mat(B, D2,D3);
+
+	cl_mem bufA = clCreateBuffer(context, CL_MEM_READ_ONLY, D1*D2*sizeof(float), NULL, NULL);
+	cl_mem bufB = clCreateBuffer(context, CL_MEM_READ_ONLY, D2*D3*sizeof(float), NULL, NULL);
+	cl_mem bufC = clCreateBuffer(context, CL_MEM_READ_ONLY, D1*D3*sizeof(float), NULL, NULL);
+
+
 
 	// input in den speicher buffer einreihen?
-	clEnqueueWriteBuffer(command_queue, input, CL_TRUE, 0, MEM_SIZE, data, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, bufA, CL_TRUE, 0, D1*D2*sizeof(float), A, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, bufB, CL_TRUE, 0, D2*D3*sizeof(float), B, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, bufC, CL_TRUE, 0, D1*D3*sizeof(float), C, 0, NULL, NULL);
+	
+
 
 	// spezifische kernel argumente setzen 
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
-	clSetKernelArg(kernel, 1, sizeof(cl_mem), &output);
-
+	clSetKernelArg(kernel, 0, sizeof(int), (void*)&D1);
+	clSetKernelArg(kernel, 1, sizeof(int), (void*)&D2);
+	clSetKernelArg(kernel, 2, sizeof(int), (void*)&D3);
+	
+	clSetKernelArg(kernel, 3, sizeof(cl_mem), (void*)&bufA);
+	clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*)&bufB);
+	clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*)&bufC);
+	
 
 	/* 3) Execute program?  */
 
-	// reiht befehl zum ausführen in die kernel warteschlange des device ein
-	clEnqueueNDRangeKernel (command_queue, kernel, 1, NULL, global, NULL, 0, NULL, NULL);
 
-	// blockiert, bis alle eingereihten openCL befehle in der command queue ausgeführt sind
-	clFinish(command_queue);
+	printf("start matmult...");
+	gettimeofday(&Tval,&timez);
+	double starttime = (double)Tval.tv_sec + 1.0e-6*((double)Tval.tv_usec);
 
-	// einreihen des buffers in die command queue zur ausgabe des buffers
-	clEnqueueReadBuffer(command_queue, output, CL_TRUE, 0, MEM_SIZE, results, 0, NULL, NULL);
+	for(int i=0;i<NUM_RUNS;i++){
+		
+		const size_t local[2] = {32,32};
+		const size_t global[2] = {D1,D2};
+		clEnqueueNDRangeKernel(command_queue,kernel,2, NULL, global, local, 0, NULL, &event);
 
-  // ausgabe von hello world
-  for (unsigned int i=0; i < DATA_SIZE; i++)
-    printf("%f\n", results[i]);
+		clWaitForEvents(1, &event);
+	}
+
+	gettimeofday(&Tval, &timez);
+	double endtime = (double)Tval.tv_sec + 1.0e-6*((double)Tval.tv_usec);
+	double runtime = (endtime - starttime) / (double)NUM_RUNS;
+	printf(">>> Done: took %.3lf seconds per run \n", runtime);
+
+	clEnqueueReadBuffer(command_queue,bufC,CL_TRUE, 0, D1*D2*sizeof(float),C, 0, NULL, NULL);
 
 
 	/* 4) speicher/buffer wieder frei geben*/
-	clReleaseMemObject(input);
-	clReleaseMemObject(output);
+	
+
+	clReleaseMemObject(bufA);
+	clReleaseMemObject(bufB);
+	clReleaseMemObject(bufC);
 	clReleaseProgram(program);
 	clReleaseKernel(kernel);
 	clReleaseCommandQueue(command_queue);
 	clReleaseContext(context);
+
+	free(A);
+	free(B);
+	free(C);
 
 	return 0;
 }

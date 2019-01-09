@@ -6,8 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DATA_SIZE   10                          //
-#define MEM_SIZE    DATA_SIZE * sizeof(float)   //
+#define DATA_SIZE   10                          // die datengröße ist 10
+#define MEM_SIZE    DATA_SIZE * sizeof(float)   // speichergröße ist 
 
 /** **/ 
 const char *KernelSource =
