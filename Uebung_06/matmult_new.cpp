@@ -5,9 +5,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <omp.h>
 
-#define DATA_SIZE   10                          // die datengröße ist 10
-#define MEM_SIZE    DATA_SIZE * sizeof(float)   // speichergröße ist für DATA_SIZE
+#define MAT_SIZE 1000
+#define DATA_SIZE 10
+#define MEM_SIZE MAT_SIZE * sizeof(float)
+#define NUM_RUNS 2
+
+
+float **alloc_mat(int row, int col)
+{
+    float **A1, *A2;
+
+	A1 = (float **)calloc(row, sizeof(float *));		// pointer on rows
+	A2 = (float *)calloc(row*col, sizeof(float));    // all matrix elements
+    for (int i = 0; i < row; i++)
+        A1[i] = A2 + i*col;
+
+    return A1;
+}
+
+// ---------------------------------------------------------------------------
+// random initialisation of matrix with values [0..9]
+
+void init_mat(float *A, int row, int col)
+{
+	for (int i = 0; i < row*col; i++)
+		A[i] = (float)(rand() % 10);
+}
+
 
 
 /** kernel  string definieren **/
@@ -23,6 +50,9 @@ const char *KernelSource =
 /** Beginn der main methode **/
 int main (void)
 {
+    int D1 = MAT_SIZE;
+	int D2 = MAT_SIZE;
+	int D3 = MAT_SIZE;
 	cl_int				err;                      // integer für error erstellen
 	cl_platform_id*		platforms = NULL;         // plattform ID
 	char			    platform_name[1024];      // plattform name
@@ -36,7 +66,7 @@ int main (void)
 	cl_mem				input, output;            // input/output speicher initialisieren
 	float				data[DATA_SIZE] =         // data array erstellen
 							{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-	size_t				global[1] = {DATA_SIZE};  // größe der Objekte
+	size_t				global[2] = {D2,D3};  // größe der Objekte
 	float				results[DATA_SIZE] = {0}; // ergebniarray erstellen
 
 	/* kernel initialiseren - testen, ob alles richtig initialisert werden kann */
@@ -132,41 +162,64 @@ int main (void)
 
 	/* 2) Das eigentliche programm --> speicher deklarieren?*/
 
-	// reserviert speicher für input und output
-	input  = clCreateBuffer (context, CL_MEM_READ_ONLY,	 MEM_SIZE, NULL, &err);
-	output = clCreateBuffer (context, CL_MEM_WRITE_ONLY, MEM_SIZE, NULL, &err);
+    //alloc matrices
+	float * A = (float*)malloc(D1*D2*sizeof(float*));
+	float * B = (float*)malloc(D2*D3*sizeof(float*));
+	float * C = (float*)malloc(D1*D3*sizeof(float*));
+	//init matrices
 
-	// input speicher in der commandqueue berechnen
-	clEnqueueWriteBuffer(command_queue, input, CL_TRUE, 0, MEM_SIZE, data, 0, NULL, NULL);
+	printf("initialize matrices \n");
+	printf("\n");
+	init_mat(A, D1,D2);
+	init_mat(B, D2,D3);
+
+	cl_mem bufA = clCreateBuffer(context, CL_MEM_READ_ONLY, D1*D2*sizeof(float), NULL, NULL);
+	cl_mem bufB = clCreateBuffer(context, CL_MEM_READ_ONLY, D2*D3*sizeof(float), NULL, NULL);
+	cl_mem bufC = clCreateBuffer(context, CL_MEM_READ_ONLY, D1*D3*sizeof(float), NULL, NULL);
+
+    // input in den speicher buffer einreihen?
+	clEnqueueWriteBuffer(command_queue, bufA, CL_TRUE, 0, D1*D2*sizeof(float), A, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, bufB, CL_TRUE, 0, D2*D3*sizeof(float), B, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, bufC, CL_TRUE, 0, D1*D3*sizeof(float), C, 0, NULL, NULL);
+	
+
 
 	// spezifische kernel argumente setzen 
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &input);
-	clSetKernelArg(kernel, 1, sizeof(cl_mem), &output);
+	clSetKernelArg(kernel, 0, sizeof(int), (void*)&D1);
+	clSetKernelArg(kernel, 1, sizeof(int), (void*)&D2);
+	clSetKernelArg(kernel, 2, sizeof(int), (void*)&D3);
+	
+	clSetKernelArg(kernel, 3, sizeof(cl_mem), (void*)&bufA);
+	clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*)&bufB);
+	clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*)&bufC);
+	
 
 
-	/* 3) Execute program?  */
-
-	// reiht befehl zum ausführen in den kernel bzw. commandqueue ein
 	clEnqueueNDRangeKernel (command_queue, kernel, 1, NULL, global, NULL, 0, NULL, NULL);
+
+    for(int i=0;i<NUM_RUNS;i++){
+		
+		const size_t local[2] = {32,32};
+		const size_t global[2] = {D1,D2};
+		
+		
+	}
+
 
 	// blockiert, bis alle eingereihten openCL befehle in der command queue ausgeführt sind
 	clFinish(command_queue);
 
-	// einreihen des buffers in die command queue zur ausgabe von output
-	clEnqueueReadBuffer(command_queue, output, CL_TRUE, 0, MEM_SIZE, results, 0, NULL, NULL);
-
-  // ausgabe von hello world array
-  for (unsigned int i=0; i < DATA_SIZE; i++)
-    printf("%f\n", results[i]);
-
-
-	/* 4) speicher/buffer wieder frei geben*/
-	clReleaseMemObject(input);
-	clReleaseMemObject(output);
+	clReleaseMemObject(bufA);
+	clReleaseMemObject(bufB);
+	clReleaseMemObject(bufC);
 	clReleaseProgram(program);
 	clReleaseKernel(kernel);
 	clReleaseCommandQueue(command_queue);
 	clReleaseContext(context);
+
+	free(A);
+	free(B);
+	free(C);
 
 	return 0;
 }

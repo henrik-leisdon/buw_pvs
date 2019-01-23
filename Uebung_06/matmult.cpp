@@ -6,27 +6,59 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <omp.h>
 
 #define DATA_SIZE   10                          // 
 #define MEM_SIZE    DATA_SIZE * sizeof(float)   //
-#define MAT_SIZE 1000
-
+#define MAT_SIZE 2000
+#define DIM 1000 
 #define NUM_RUNS 2
 
 /** kernel  string definieren **/ 
 const char *KernelSource =
-	"																					\n"
-	"__kernel void matmult(const int D1, const int D2, const int D3,					 "
-	"   const	__global float *A, const __global float *B, __global float *C)  	\n"
-	"{																					\n"
-	"	const int globalRow = get_global_id(0);											\n"
-	"	const int globalCol = get_global_id(1);											\n"
-	"	float acc = 0.0f;																  "	
-	"	for(int k=0;k<D3;k++){															\n"
-	"		acc +=A[k*D1 + globalRow] * B[globalCol*D2+k];								  "
-	"	}																				\n"
-	"	C[globalCol*D1+ globalRow] = acc;												\n"
-	" } \n";
+
+" 																		  "  // Groesse der Matrix
+"__kernel void matmult(__global float *A, __global float *B, __global float *C) { 		\n"
+"int i, j, k;																			\n"
+"float sum; // Private Variable für Zwischenergebnisse									\n"	
+"i = get_global_id(0);																	\n"	
+"for (j = 0; j < DIM; j++) {															\n"			
+"sum = 0.0;																				\n"		
+"for (k = 0; k < DIM; k++)																\n"
+"sum += A[i*DIM+k] * B[k*DIM+j];														\n"	
+"C[i*DIM+j] = sum;																		\n"
+"}																						\n"				
+"}																						\n";
+
+
+/*"																					\n"
+"__kernel void matmult(const int D1, const int D2, const int D3,					\n"
+"   const	__global float *A, const __global float *B, __global float *C)  		\n"
+"{																					\n"
+"	const int globalRow = get_global_id(0);											\n"
+"	const int globalCol = get_global_id(1);											\n"
+"	float Al[DIM], acc;																\n"
+"	for(int k=0;k<DIM;l++)															\n"
+"		Al[k] = A[k*D1 + globalRow];												\n"
+"	acc = 0.0f;																  		\n"	
+"	for(k=0;k<DIM;k++){																\n"
+"		acc += Al[k] * B[k*DIM+k];													\n"
+"	C[globalCol*D1+ globalRow] = acc; 												\n"
+"	}																				\n"
+" } \n";
+*/
+
+/* "#define DIM 1000 // Size of matrix												\n"
+"__kernel void matmult(__global float *A, __global float *B, __global float *C) {	\n"
+" int i, j, k;																		\n"
+" float sum = 0.0;																	\n"
+" j = get_global_id(0);																\n"
+" i = get_global_id(1);																\n"
+" for (k = 0; k < DIM; k++)															\n"
+" sum += A[i*DIM+k] * B[k*DIM+j];													\n"
+" C[i*DIM+j] = sum;																	\n"
+"}" 
+*/
 
 float **alloc_mat(int row, int col)
 {
@@ -73,7 +105,7 @@ int main (void)
 	cl_mem				input, output;            // input/output speicher initialisieren
 	float				data[DATA_SIZE] =         // data array erstellen
 							{1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-	size_t				global[2] = {D1,D3};  // größe der Objekte
+	size_t				global[1] = {DIM};  // größe der Objekte
 	float				results[DATA_SIZE] = {0}; // ergebniarray erstellen
 
 	/* 1)  Erstellen des programms */
@@ -212,17 +244,18 @@ int main (void)
 	cl_ulong time_start;
 	cl_ulong time_end;
 
-	clEnqueueNDRangeKernel(command_queue, kernel , 1, NULL, &global ,&local, 0 ,NULL, &event);
+	//double startomp, endomp; 
 
 	clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(time_start), &time_start, NULL);
 	clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(time_end), &time_end, NULL);
-	
+	clEnqueueNDRangeKernel(command_queue,kernel,1, NULL, global,NULL, 0, NULL, NULL);
+	//startomp = omp_get_wtime();
 
 	for(int i=0;i<NUM_RUNS;i++){
 		
 		const size_t local[2] = {32,32};
 		const size_t global[2] = {D1,D2};
-		clEnqueueNDRangeKernel(command_queue,kernel,2, NULL, global, local, 0, NULL, &event);
+		
 
 		clWaitForEvents(1, &event);
 		
@@ -234,9 +267,9 @@ int main (void)
 	
 	printf("Done \n");
 
-	
+	//endomp = omp_get_wtime();
 	printf(" Done took %0.3f milliseconds \n", ((time_end-time_start)/1000000.0));
-
+	//printf("Done, took %f seconds \n", endomp-startomp);
 	
 	clEnqueueReadBuffer(command_queue,bufC,CL_TRUE, 0, D1*D2*sizeof(float),C, 0, NULL, NULL);
 
@@ -244,12 +277,7 @@ int main (void)
 
 
 	//--------serielle version-----------------------------------------------------------
-	/*
-	- Dies ist die Serielle Version, inklusive des tests.
-	- Beim ausführen entsteht ein segementation faul, wodurch wir nicht testen konnten, ob 
-	  die berechntete Matrix korrekt ist. 
-
-
+/*
 	float **Aser, **Bser, *Cser, **Ctemp;	// matrices
     int d1, d2, d3;         // dimensions of matrices
     int i, j, k;			// loop variables
