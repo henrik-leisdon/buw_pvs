@@ -47,7 +47,6 @@ const char *kernelstring =
     "    }"
     "    C[globalCol*M + globalRow] = acc;"
     "}";
-
 // =================================================================================================
 
 // Matrix-multiplication using a custom OpenCL SGEMM kernel.

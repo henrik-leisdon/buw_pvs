@@ -39,13 +39,16 @@ void init_mat(float *A, int row, int col)
 
 /** kernel  string definieren **/
 const char *KernelSource =
-	"#define DATA_SIZE 10												\n"
-	"__kernel void test(__global float *input, __global float *output)  \n"
-	"{																	\n"
-	"	size_t i = get_global_id(0);									\n"
-	"	output[i] = input[i] * input[i];								\n"
-	"}																	\n"
-	"\n";
+"#define DIM 1000  // Size of matrix												\n"
+"__kernel void matmult(__global float *A, __global float *B, __global float *C) {	\n"
+" int i, j, k;																		\n"
+" float sum = 0.0;																	\n"
+" j = get_global_id(0);																\n"
+" i = get_global_id(1);																\n"
+" for (k = 0; k < DIM; k++)															\n"
+" sum += A[i*DIM+k] * B[k*DIM+j];													\n"
+" C[i*DIM+j] = sum;																	\n"
+"}"
 
 /** Beginn der main methode **/
 int main (void)
@@ -195,15 +198,28 @@ int main (void)
 	
 
 
-	clEnqueueNDRangeKernel (command_queue, kernel, 1, NULL, global, NULL, 0, NULL, NULL);
+	//clEnqueueNDRangeKernel (command_queue, kernel, 1, NULL, global, NULL, 0, NULL, NULL);
+	printf(">>> Starting %d myGEMM runs...\n", NUM_RUNS);
+	gettimeofday(&Tvalue, &dummy);
+	double starttime = (double)Tvalue.tv_sec + 1.0e-6*((double)Tvalue.tv_usec);
 
     for(int i=0;i<NUM_RUNS;i++){
 		
 		const size_t local[2] = {32,32};
 		const size_t global[2] = {D1,D2};
 		
-		
+		clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global, local, 0, NULL, &event);
+
+		// Wait for calculations to be finished
+		clWaitForEvents(1, &event);
 	}
+
+	gettimeofday(&Tvalue, &dummy);
+	double endtime = (double)Tvalue.tv_sec + 1.0e-6*((double)Tvalue.tv_usec);
+	double runtime = (endtime - starttime) / (double)NUM_RUNS;
+	double gflop = ((long)K * (long)M * (long)N * 2) / (1000 * 1000 * 1000);
+	printf(">>> Done: took %.3lf seconds per run, %.1lf GFLOPS\n", runtime, gflop / runtime);
+
 
 
 	// blockiert, bis alle eingereihten openCL befehle in der command queue ausgeführt sind
